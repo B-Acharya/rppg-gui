@@ -1,95 +1,26 @@
-from PyQt5 import QtGui
-from PyQt5.QtWidgets import QWidget, QApplication, QLabel, QVBoxLayout
-from PyQt5.QtGui import QPixmap
-import pyqtgraph as pg
-import sys
-import cv2
-from PyQt5.QtCore import pyqtSignal, pyqtSlot, Qt, QThread
-import numpy as np
+import logging
 import queue
+import sys
 
+import cv2
+import numpy as np
+import pyqtgraph as pg
+import scipy
+from PyQt5 import QtGui
+from PyQt5.QtCore import Qt, QThread, pyqtSignal, pyqtSlot
+from PyQt5.QtGui import QPixmap
+from PyQt5.QtWidgets import QApplication, QLabel, QVBoxLayout, QWidget
 
-class rPPGExtractor(QThread):
-    result_ready = pyqtSignal(np.ndarray)  # Send back processing result
+from fft_extraction import CalcualteFFT
+from rppg_extraction import rPPGExtractor
 
-    def __init__(self):
-        super().__init__()
-        self.frame_queue = queue.Queue(maxsize=1)  # Queue for frame processing
-        self.running = True
-
-        self.face_cascade = cv2.CascadeClassifier(
-            "/Users/bhargavacharya/PycharmProjects/rppg-gui/haarcascade_frontalface_alt.xml"
-        )
-
-    def process_frame(self, frame):
-        """Add a frame to the processing queue"""
-        # Replace old frame with new one if queue is full
-        if self.frame_queue.full():
-            try:
-                self.frame_queue.get_nowait()
-            except queue.Empty:
-                pass
-        self.frame_queue.put(frame)
-
-    def run(self):
-        while self.running:
-            try:
-                # Get frame with timeout to avoid blocking indefinitely
-                frame = self.frame_queue.get(timeout=1.0)
-                result = self.process(frame)
-                self.result_ready.emit(result)
-            except queue.Empty:
-                # No frame available, continue waiting
-                continue
-
-    def stop(self):
-        """Safely stop the thread"""
-        self.running = False
-        self.wait()
-
-    def process(self, cv_img):
-        frame_gray = cv2.cvtColor(cv_img, cv2.COLOR_BGR2GRAY)
-        frame_gray = cv2.equalizeHist(frame_gray)
-        faces = self.face_cascade.detectMultiScale(frame_gray)
-
-        if len(faces) > 0:
-            # Assuming the first face is the target
-            x, y, w, h = faces[0]
-
-            # Calculate the new coordinates and dimensions for a 1:1 aspect ratio
-            center_x = x + w // 2
-            center_y = y + h // 2
-            size = int(max(w, h) * 1.0)
-            x_new = max(0, center_x - size // 2)
-            y_new = max(0, center_y - size // 2)
-
-            # Ensure we don't go out of bounds
-            height, width = cv_img.shape[:2]
-            x_new = min(x_new, width - size)
-            y_new = min(y_new, height - size)
-
-            # If size is too large, adjust it
-            if x_new + size > width:
-                size = width - x_new
-            if y_new + size > height:
-                size = height - y_new
-
-            # Only crop if dimensions are valid
-            if size > 0 and x_new >= 0 and y_new >= 0:
-                cropped_head = cv_img[y_new : y_new + size, x_new : x_new + size]
-            else:
-                cropped_head = cv_img
-                print("Invalid crop dimensions, using full image")
-        else:
-            cropped_head = cv_img
-            print("No faces detected in the input image.")
-
-        # Extract green channel average (you might want to improve this for actual rPPG)
-        if cropped_head.size > 0:
-            green = np.mean(cropped_head[:, :, 1])  # Mean of green channel
-        else:
-            green = 0
-        return np.array([green])
+# 1. Set up logging
+logging.basicConfig(
+    level=logging.DEBUG,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    handlers=[logging.FileHandler("app.log"), logging.StreamHandler()],
+)
+logger = logging.getLogger(__name__)
 
 
 class VideoThread(QThread):
@@ -118,6 +49,7 @@ class VideoThread(QThread):
 class App(QWidget):
     def __init__(self):
         super().__init__()
+        logger.info("Starting the App")
         self.setWindowTitle("rPPG GUI Demo")
         self.disply_width = 640
         self.display_height = 480
@@ -137,6 +69,12 @@ class App(QWidget):
         self.rppg_widget.setLabel("bottom", "Samples")
         self.rppg_curve = self.rppg_widget.plot(pen="g")
 
+        self.fft_widget = pg.PlotWidget()
+        self.fft_widget.setTitle("FFT of the Signal")
+        self.fft_widget.setLabel("left", "Power")
+        self.fft_widget.setLabel("bottom", "Frequency")
+        self.fft_cruve = self.fft_widget.plot(pen="g")
+
         # create a text label
         self.textLabel = QLabel("rPPG-GUI")
 
@@ -145,31 +83,41 @@ class App(QWidget):
         vbox.addWidget(self.image_label)
         vbox.addWidget(self.textLabel)
         vbox.addWidget(self.rppg_widget)
+        vbox.addWidget(self.fft_widget)
 
         # set the vbox layout as the widgets layout
         self.setLayout(vbox)
 
         # create the video capture thread
-        self.thread = VideoThread()
+        self.videoThread = VideoThread()
         # connect its signal to the update_image slot
-        self.thread.change_pixmap_signal.connect(self.update_image)
+        self.videoThread.change_pixmap_signal.connect(self.update_image)
+        # start the video thread
+        self.videoThread.start()
 
         # create the processor thread (only one instance that lives throughout the app)
-        self.processor = rPPGExtractor()
+        self.processor = rPPGExtractor(logger)
         self.processor.result_ready.connect(self.update_rppg)
         self.processor.start()
 
-        # start the video thread
-        self.thread.start()
+        # create the process thread to calcuate the HR
+        self.calculateFFT = CalcualteFFT(logger)
+        self.calculateFFT.fft_estimate_singal.connect(self.update_FFT)
+        self.calculateFFT.start()
 
     def closeEvent(self, event):
         # Properly stop all threads
-        self.thread.stop()
+        self.videoThread.stop()
         self.processor.stop()
+        self.calculateFFT.stop()
         event.accept()
 
     @pyqtSlot(np.ndarray)
-    def update_rppg(self, green_value):
+    def update_FFT(self, fftSgnal: np.ndarray):
+        self.fft_cruve.setData(fftSgnal.reshape(-1))
+
+    @pyqtSlot(np.ndarray)
+    def update_rppg(self, green_value: np.ndarray):
         """Updates the rPPG plot with new data"""
         # Append new value
         self.rppg_data.append(float(green_value[0]))
@@ -177,12 +125,13 @@ class App(QWidget):
         # Keep only the last max_data_points
         if len(self.rppg_data) > self.max_data_points:
             self.rppg_data = self.rppg_data[-self.max_data_points :]
+            self.calculateFFT.process_signal(self.rppg_data)
 
         # Update the plot
         self.rppg_curve.setData(self.rppg_data)
 
     @pyqtSlot(np.ndarray)
-    def update_image(self, cv_img):
+    def update_image(self, cv_img: np.ndarray):
         """Updates the image_label with a new opencv image"""
         qt_img = self.convert_cv_qt(cv_img)
         self.image_label.setPixmap(qt_img)
@@ -205,6 +154,7 @@ class App(QWidget):
 
 
 if __name__ == "__main__":
+    logger = logging.getLogger(__name__)
     app = QApplication(sys.argv)
     a = App()
     a.show()
