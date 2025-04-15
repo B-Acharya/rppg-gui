@@ -9,6 +9,5 @@ dependencies = [
     "opencv-python>=4.11.0.86",
     "pyqt5>=5.15.11",
     "pyqtgraph>=0.13.7",
-    "pyside6>=6.9.0",
     "scipy>=1.15.2",
 ]

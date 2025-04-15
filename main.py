@@ -1,11 +1,10 @@
 import logging
-import queue
 import sys
+import time
 
 import cv2
 import numpy as np
 import pyqtgraph as pg
-import scipy
 from PyQt5 import QtGui
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, pyqtSlot
 from PyQt5.QtGui import QPixmap
@@ -56,6 +55,7 @@ class App(QWidget):
 
         # Initialize data for the plot
         self.rppg_data = []
+        self.rppg_timestamps = []
         self.max_data_points = 250  # Maximum number of data points to display
 
         # create the label that holds the image
@@ -112,23 +112,36 @@ class App(QWidget):
         self.calculateFFT.stop()
         event.accept()
 
-    @pyqtSlot(np.ndarray)
-    def update_FFT(self, fftSgnal: np.ndarray):
-        self.fft_cruve.setData(fftSgnal.reshape(-1))
+    @pyqtSlot(np.ndarray, np.ndarray)
+    def update_FFT(self, frequency: np.ndarray, fftSgnal: np.ndarray):
+        self.fft_cruve.setData(
+            x=frequency,
+            y=fftSgnal.reshape(-1),
+        )
 
     @pyqtSlot(np.ndarray)
     def update_rppg(self, green_value: np.ndarray):
         """Updates the rPPG plot with new data"""
         # Append new value
+        current_time = current_time = time.time()
+
         self.rppg_data.append(float(green_value[0]))
+        self.rppg_timestamps.append(current_time)
 
-        # Keep only the last max_data_points
-        if len(self.rppg_data) > self.max_data_points:
-            self.rppg_data = self.rppg_data[-self.max_data_points :]
-            self.calculateFFT.process_signal(self.rppg_data)
+        # Apply filtering only if we have enough data
+        if len(self.rppg_data) > 30:
+            # Keep only the last max_data_points
+            fs = self.estimate_fs(self.rppg_timestamps)
+            logger.info(f"fs:{fs}")
+            filtered = self.calculateFFT.filter_signal(self.rppg_data, fs=fs)
+            self.rppg_curve.setData(filtered)
 
-        # Update the plot
-        self.rppg_curve.setData(self.rppg_data)
+            if len(self.rppg_data) > self.max_data_points:
+                self.rppg_data = self.rppg_data[-self.max_data_points :]
+                self.calculateFFT.process_signal(filtered, fs)
+
+        else:
+            self.rppg_curve.setData(self.rppg_data)
 
     @pyqtSlot(np.ndarray)
     def update_image(self, cv_img: np.ndarray):
@@ -152,9 +165,18 @@ class App(QWidget):
         )
         return QPixmap.fromImage(p)
 
+    def estimate_fs(self, timestamps):
+
+        if len(timestamps) < 2:
+            return 30  # Default fallback
+
+        intervals = np.diff(timestamps)
+        avg_interval = np.mean(intervals)
+        fs = 1.0 / avg_interval if avg_interval > 0 else 30  # Avoid divide-by-zero
+        return fs
+
 
 if __name__ == "__main__":
-    logger = logging.getLogger(__name__)
     app = QApplication(sys.argv)
     a = App()
     a.show()
