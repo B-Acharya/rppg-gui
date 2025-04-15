@@ -57,6 +57,7 @@ class App(QWidget):
         self.rppg_data = []
         self.rppg_timestamps = []
         self.max_data_points = 250  # Maximum number of data points to display
+        self.hr = 0.0
 
         # create the label that holds the image
         self.image_label = QLabel(self)
@@ -77,6 +78,7 @@ class App(QWidget):
 
         # create a text label
         self.textLabel = QLabel("rPPG-GUI")
+        self.hr_widget = QLabel(f"Current HR: {self.hr}")
 
         # create a vertical box layout and add the two labels
         vbox = QVBoxLayout()
@@ -84,6 +86,7 @@ class App(QWidget):
         vbox.addWidget(self.textLabel)
         vbox.addWidget(self.rppg_widget)
         vbox.addWidget(self.fft_widget)
+        vbox.addWidget(self.hr_widget)
 
         # set the vbox layout as the widgets layout
         self.setLayout(vbox)
@@ -105,6 +108,8 @@ class App(QWidget):
         self.calculateFFT.fft_estimate_singal.connect(self.update_FFT)
         self.calculateFFT.start()
 
+        self.calculateFFT.fft_estimate_singal.connect(self.update_HR)
+
     def closeEvent(self, event):
         # Properly stop all threads
         self.videoThread.stop()
@@ -118,6 +123,12 @@ class App(QWidget):
             x=frequency,
             y=fftSgnal.reshape(-1),
         )
+
+    @pyqtSlot(np.ndarray, np.ndarray)
+    def update_HR(self, frequency: np.ndarray, fftSignal: np.ndarray):
+        max = np.argmax(fftSignal)
+        self.hr = frequency[max] * 60.0
+        self.hr_widget.setText(f"Current HR: {self.hr}")
 
     @pyqtSlot(np.ndarray)
     def update_rppg(self, green_value: np.ndarray):
