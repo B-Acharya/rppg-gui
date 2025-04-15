@@ -21,6 +21,6 @@ This project uses [`uv`](https://github.com/astral-sh/uv) for dependency managem
 ```bash
 # Create a virtual environment and install dependencies
 uv venv
-uv pip install -r requirements.txt
+uv add -r requirements.txt
 
 ```
