@@ -87,11 +87,3 @@ class rPPGExtractor(QThread):
         else:
             green = 0
         return np.array([green])
-
-    def filter_signal(self, data, lowcut=0.7, highcut=4.0, fs=30, order=3):
-        nyq = 0.5 * fs
-        low = lowcut / nyq
-        high = highcut / nyq
-        b, a = butter(order, [low, high], btype="band")
-        filtered = filtfilt(b, a, data)
-        return filtered

@@ -8,6 +8,12 @@ A real-time Python application for extracting remote Photoplethysmography (rPPG)
 - Face detection using OpenCV Haar cascades
 - Green channel extraction for rPPG
 
+## TODO
+
+- adding other methods such as CHROM and POS
+- Maybe adding TS-CAN ?
+- Functionality to select the method before processing begins
+
 ## 📦 Installation
 
 This project uses [`uv`](https://github.com/astral-sh/uv) for dependency management.

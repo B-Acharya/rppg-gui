@@ -74,7 +74,7 @@ class CalcualteFFT(QThread):
         return 1 if x == 0 else 2 ** (x - 1).bit_length()
 
     @staticmethod
-    def filter_signal(data, lowcut=0.7, highcut=4.0, fs=30, order=3):
+    def filter_signal(data, lowcut=0.7, highcut=2.5, fs=30, order=3):
         nyq = 0.5 * fs
         low = lowcut / nyq
         high = highcut / nyq
