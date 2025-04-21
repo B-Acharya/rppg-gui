@@ -6,13 +6,16 @@ A real-time Python application for extracting remote Photoplethysmography (rPPG)
 
 - Real-time webcam capture
 - Face detection using OpenCV Haar cascades
+- Show when the face is detected
 - Green channel extraction for rPPG
 
 ## TODO
 
-- adding other methods such as CHROM and POS
-- Maybe adding TS-CAN ?
-- Functionality to select the method before processing begins
+[ ] adding other methods such as CHROM and POS
+[ ] Maybe adding TS-CAN ?
+[ ] Functionality to select the method before processing begins
+[ ] Option to select the face detection algorithm
+[ ] Update the costly transfer of images between threads and only send the cropped image
 
 ## 📦 Installation
 

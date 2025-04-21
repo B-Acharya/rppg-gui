@@ -1,4 +1,4 @@
-from PyQt5.QtCore import pyqtSignal, pyqtSlot, Qt, QThread
+from PyQt5.QtCore import pyqtSignal, QThread
 import numpy as np
 import queue
 import scipy

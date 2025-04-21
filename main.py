@@ -12,6 +12,7 @@ from PyQt5.QtWidgets import QApplication, QLabel, QVBoxLayout, QWidget
 
 from fft_extraction import CalcualteFFT
 from rppg_extraction import rPPGExtractor
+from face_extraction import faceExtractionResutls, FaceExtraction
 
 # 1. Set up logging
 logging.basicConfig(
@@ -93,15 +94,18 @@ class App(QWidget):
 
         # create the video capture thread
         self.videoThread = VideoThread()
-        # connect its signal to the update_image slot
-        self.videoThread.change_pixmap_signal.connect(self.update_image)
-        # start the video thread
+        self.videoThread.change_pixmap_signal.connect(self.start_processing)
         self.videoThread.start()
 
+        # create the face extraction thread
+        self.face_extraction = FaceExtraction(logger)
+        self.face_extraction.extracted_face.connect(self.update_image)
+        self.face_extraction.start()
+
         # create the processor thread (only one instance that lives throughout the app)
-        self.processor = rPPGExtractor(logger)
-        self.processor.result_ready.connect(self.update_rppg)
-        self.processor.start()
+        self.rppg_extractor = rPPGExtractor(logger)
+        self.rppg_extractor.result_ready.connect(self.update_rppg)
+        self.rppg_extractor.start()
 
         # create the process thread to calcuate the HR
         self.calculateFFT = CalcualteFFT(logger)
@@ -113,7 +117,7 @@ class App(QWidget):
     def closeEvent(self, event):
         # Properly stop all threads
         self.videoThread.stop()
-        self.processor.stop()
+        self.rppg_extractor.stop()
         self.calculateFFT.stop()
         event.accept()
 
@@ -155,17 +159,33 @@ class App(QWidget):
             self.rppg_curve.setData(self.rppg_data)
 
     @pyqtSlot(np.ndarray)
-    def update_image(self, cv_img: np.ndarray):
-        """Updates the image_label with a new opencv image"""
-        qt_img = self.convert_cv_qt(cv_img)
-        self.image_label.setPixmap(qt_img)
-
+    def start_processing(self, webcam_img: np.ndarray):
         # Send the frame to the processor thread
-        self.processor.process_frame(cv_img)
+        self.face_extraction.process_frame(webcam_img)
 
-    def convert_cv_qt(self, cv_img):
+    @pyqtSlot(faceExtractionResutls)
+    def update_image(self, face_extraction_results: faceExtractionResutls):
+        """Updates the image_label with a new opencv image"""
+
+        qt_img = self.convert_cv_qt(face_extraction_results)
+        self.image_label.setPixmap(qt_img)
+        self.rppg_extractor.process_frame(face_extraction_results)
+
+    def convert_cv_qt(self, face_extraction_results):
         """Convert from an opencv image to QPixmap"""
-        rgb_image = cv2.cvtColor(cv_img, cv2.COLOR_BGR2RGB)
+
+        rgb_image = cv2.cvtColor(face_extraction_results.image, cv2.COLOR_BGR2RGB)
+
+        # overlay a retangular box over it
+        x, y, w, h = face_extraction_results.face_coordinates
+
+        if face_extraction_results.face_detected:
+            # use green if the face was detected for this frame
+            cv2.rectangle(rgb_image, (x, y), (x + w, y + h), (0, 255, 0), 2)
+        else:
+            # use red when the face was not detected and an old face extraction is used
+            cv2.rectangle(rgb_image, (x, y), (x + w, y + h), (255, 0, 0), 2)
+
         h, w, ch = rgb_image.shape
         bytes_per_line = ch * w
         convert_to_Qt_format = QtGui.QImage(
