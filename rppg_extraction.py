@@ -2,6 +2,7 @@ from PyQt5.QtCore import pyqtSignal, pyqtSlot, Qt, QThread
 import numpy as np
 import cv2
 import queue
+from face_extraction import faceExtractionResutls
 
 
 class rPPGExtractor(QThread):
@@ -17,22 +18,23 @@ class rPPGExtractor(QThread):
             "/Users/bhargavacharya/PycharmProjects/rppg-gui/haarcascade_frontalface_alt.xml"
         )
 
-    def process_frame(self, frame):
+    def process_frame(self, face_extraction_resutls):
         """Add a frame to the processing queue"""
         # Replace old frame with new one if queue is full
+        #
         if self.frame_queue.full():
             try:
                 self.frame_queue.get_nowait()
             except queue.Empty:
                 pass
-        self.frame_queue.put(frame)
+        self.frame_queue.put(face_extraction_resutls)
 
     def run(self):
         while self.running:
             try:
                 # Get frame with timeout to avoid blocking indefinitely
-                frame = self.frame_queue.get(timeout=1.0)
-                result = self.process(frame)
+                face_extraction_resutls = self.frame_queue.get(timeout=1.0)
+                result = self.process(face_extraction_resutls)
                 self.result_ready.emit(result)
             except queue.Empty:
                 # No frame available, continue waiting
@@ -43,24 +45,23 @@ class rPPGExtractor(QThread):
         self.running = False
         self.wait()
 
-    def process(self, cv_img):
-        frame_gray = cv2.cvtColor(cv_img, cv2.COLOR_BGR2GRAY)
-        frame_gray = cv2.equalizeHist(frame_gray)
-        faces = self.face_cascade.detectMultiScale(frame_gray)
+    def process(self, face_extraction_resutls):
 
-        if len(faces) > 0:
-            # Assuming the first face is the target
-            x, y, w, h = faces[0]
+        x, y, w, h = face_extraction_resutls.face_coordinates
 
-            # Calculate the new coordinates and dimensions for a 1:1 aspect ratio
-            center_x = x + w // 2
-            center_y = y + h // 2
-            size = int(max(w, h) * 1.0)
-            x_new = max(0, center_x - size // 2)
-            y_new = max(0, center_y - size // 2)
+        # Calculate the new coordinates and dimensions for a 1:1 aspect ratio
+        center_x = x + w // 2
+        center_y = y + h // 2
+        size = int(max(w, h) * 1.0)
+        x_new = max(0, center_x - size // 2)
+        y_new = max(0, center_y - size // 2)
 
-            # Ensure we don't go out of bounds
-            height, width = cv_img.shape[:2]
+        # Ensure we don't go out of bounds
+        if face_extraction_resutls.image is None:
+            # dummy green value for the start when the image is of none type ?
+            green = 0.0
+        else:
+            height, width = face_extraction_resutls.image.shape[:2]
             x_new = min(x_new, width - size)
             y_new = min(y_new, height - size)
 
@@ -72,18 +73,14 @@ class rPPGExtractor(QThread):
 
             # Only crop if dimensions are valid
             if size > 0 and x_new >= 0 and y_new >= 0:
-                cropped_head = cv_img[y_new : y_new + size, x_new : x_new + size]
+                cropped_head = face_extraction_resutls.image[
+                    y_new : y_new + size, x_new : x_new + size
+                ]
                 self.logger.info("Valid face detected full image")
             else:
-                cropped_head = cv_img
-                self.logger.info("Invalid crop dimensions, using full image")
-        else:
-            cropped_head = cv_img
-            self.logger.info("No faces detected in the input image.")
+                cropped_head = face_extraction_resutls.image
 
-        # Extract green channel average (you might want to improve this for actual rPPG)
-        if cropped_head.size > 0:
+            # Extract green channel average (you might want to improve this for actual rPPG)
             green = np.mean(cropped_head[:, :, 1])  # Mean of green channel
-        else:
-            green = 0
+
         return np.array([green])
