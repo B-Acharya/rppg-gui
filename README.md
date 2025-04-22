@@ -11,11 +11,11 @@ A real-time Python application for extracting remote Photoplethysmography (rPPG)
 
 ## TODO
 
-[ ] adding other methods such as CHROM and POS
-[ ] Maybe adding TS-CAN ?
-[ ] Functionality to select the method before processing begins
-[ ] Option to select the face detection algorithm
-[ ] Update the costly transfer of images between threads and only send the cropped image
+- [ ] adding other methods such as CHROM and POS
+- [ ] Maybe adding TS-CAN ?
+- [ ] Functionality to select the method before processing begins
+- [ ] Option to select the face detection algorithm
+- [ ] Update the costly transfer of images between threads and only send the cropped image
 
 ## 📦 Installation
 
