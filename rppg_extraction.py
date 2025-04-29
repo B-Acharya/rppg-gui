@@ -3,6 +3,7 @@ import numpy as np
 import cv2
 import queue
 from face_extraction import faceExtractionResutls
+from numba import jit
 
 
 class rPPGExtractor(QThread):
@@ -50,37 +51,47 @@ class rPPGExtractor(QThread):
         x, y, w, h = face_extraction_resutls.face_coordinates
 
         # Calculate the new coordinates and dimensions for a 1:1 aspect ratio
-        center_x = x + w // 2
-        center_y = y + h // 2
-        size = int(max(w, h) * 1.0)
-        x_new = max(0, center_x - size // 2)
-        y_new = max(0, center_y - size // 2)
 
         # Ensure we don't go out of bounds
         if face_extraction_resutls.image is None:
             # dummy green value for the start when the image is of none type ?
+            # This should be removed ?
             green = 0.0
         else:
-            height, width = face_extraction_resutls.image.shape[:2]
-            x_new = min(x_new, width - size)
-            y_new = min(y_new, height - size)
 
-            # If size is too large, adjust it
-            if x_new + size > width:
-                size = width - x_new
-            if y_new + size > height:
-                size = height - y_new
-
-            # Only crop if dimensions are valid
-            if size > 0 and x_new >= 0 and y_new >= 0:
-                cropped_head = face_extraction_resutls.image[
-                    y_new : y_new + size, x_new : x_new + size
-                ]
-                self.logger.info("Valid face detected full image")
-            else:
-                cropped_head = face_extraction_resutls.image
-
-            # Extract green channel average (you might want to improve this for actual rPPG)
-            green = np.mean(cropped_head[:, :, 1])  # Mean of green channel
+            green = extract_green(face_extraction_resutls.image, x, y, w, h)
 
         return np.array([green])
+
+
+# moved to a seperate fuctions for JIT to be allowed, lets make it go brrrrr
+# this actually does a lot of things, should be just fuction to extract green signal !! face cropping shoudl be another fucntions on its own
+
+
+@jit(nopython=True)
+def extract_green(image: np.ndarray, x: int, y: int, w: int, h: int) -> np.float32:
+    center_x = x + w // 2
+    center_y = y + h // 2
+    size = int(max(w, h) * 1.0)
+    x_new = max(0, center_x - size // 2)
+    y_new = max(0, center_y - size // 2)
+
+    height, width = image.shape[:2]
+    x_new = min(x_new, width - size)
+    y_new = min(y_new, height - size)
+
+    # If size is too large, adjust it
+    if x_new + size > width:
+        size = width - x_new
+    if y_new + size > height:
+        size = height - y_new
+
+        # Only crop if dimensions are valid
+    if size > 0 and x_new >= 0 and y_new >= 0:
+        cropped_head = image[y_new : y_new + size, x_new : x_new + size]
+    else:
+        cropped_head = image
+
+        # Extract green channel average (you might want to improve this for actual rPPG)
+    green = np.mean(cropped_head[:, :, 1])  # Mean of green channel
+    return green

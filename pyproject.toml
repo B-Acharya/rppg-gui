@@ -6,8 +6,10 @@ readme = "README.md"
 requires-python = ">=3.13"
 
 dependencies = [
+    "numba>=0.61.2",
     "opencv-python>=4.11.0.86",
     "pyqt5>=5.15.11",
     "pyqtgraph>=0.13.7",
     "scipy>=1.15.2",
+    "snakeviz>=2.2.2",
 ]
