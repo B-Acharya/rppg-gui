@@ -2,6 +2,7 @@ from PyQt5.QtCore import pyqtSignal, QThread
 import numpy as np
 import queue
 import scipy
+from numba import jit
 
 
 class CalcualteFFT(QThread):
@@ -53,7 +54,11 @@ class CalcualteFFT(QThread):
         f_ppg, pxx_ppg = scipy.signal.periodogram(
             ppg_signal, fs=fs, nfft=N, detrend=False
         )
+        return self.mask(f_ppg, pxx_ppg)
 
+    @staticmethod
+    @jit(nopython=True)
+    def mask(f_ppg, pxx_ppg):
         fmask_ppg = np.argwhere((f_ppg >= 0.6) & (f_ppg <= 3.3))
         mask_ppg = np.take(f_ppg, fmask_ppg)
 
